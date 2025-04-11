@@ -13,15 +13,37 @@ let backendTargets = {
   // Добавьте другие бэкенды по мере необходимости
 };
 
-// POST-запрос для добавления нового бэкенда
+// Helper function to get real IP address
+function getClientIp(req) {
+    return req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+           req.headers['x-real-ip'] ||
+           req.socket.remoteAddress;
+}
+
+// Modified POST endpoint for backend registration
 app.post('/backend', (req, res) => {
-  const { name, target } = req.body;
-  if (name && target) {
-    backendTargets[name] = target;
-    res.status(201).send(`Бэкенд ${name} добавлен.`);
-  } else {
-    res.status(400).send('Необходимо указать name и target.');
-  }
+    const { name, target } = req.body;
+    if (!name || !target) {
+        return res.status(400).send('Необходимо указать name и target.');
+    }
+
+    const clientIp = getClientIp(req);
+    console.log(`Получен запрос от IP: ${clientIp}`);
+
+    // Parse the target URL
+    try {
+        const targetUrl = new URL(target);
+        // If target contains localhost or 127.0.0.1, replace with actual client IP
+        if (targetUrl.hostname === 'localhost' || targetUrl.hostname === '127.0.0.1') {
+            targetUrl.hostname = clientIp;
+            backendTargets[name] = targetUrl.toString();
+        } else {
+            backendTargets[name] = target;
+        }
+        res.status(201).send(`Бэкенд ${name} добавлен с IP ${clientIp}`);
+    } catch (error) {
+        res.status(400).send(`Некорректный URL: ${error.message}`);
+    }
 });
 
 // DELETE-запрос для удаления бэкенда
