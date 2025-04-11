@@ -32,11 +32,13 @@ function getClientIp(req) {
 app.post('/backend', (req, res) => {
     const { name, target, routes } = req.body;
     if (!name || !target) {
-        return res.status(400).send('Необходимо указать name и target.');
+        return res.status(400).json({
+            error: 'Name and target are required'
+        });
     }
 
     const clientIp = getClientIp(req);
-    console.log(`Получен запрос от IP: ${clientIp}`);
+    console.log(`Request received from IP: ${clientIp}`);
 
     try {
         const targetUrl = new URL(target);
@@ -46,24 +48,33 @@ app.post('/backend', (req, res) => {
         
         backendTargets[name] = {
             baseUrl: targetUrl.toString(),
-            routes: routes || { default: "/" } // Если маршруты не указаны, используем дефолтный
+            routes: routes || { default: "/" }
         };
         
-        res.status(201).send(`Бэкенд ${name} добавлен с IP ${clientIp}`);
+        res.status(201).json({
+            message: `Backend ${name} added with IP ${clientIp}`,
+            backend: backendTargets[name]
+        });
     } catch (error) {
-        res.status(400).send(`Некорректный URL: ${error.message}`);
+        res.status(400).json({
+            error: `Invalid URL: ${error.message}`
+        });
     }
 });
 
 // DELETE-запрос для удаления бэкенда
 app.delete('/backend', (req, res) => {
-  const { name } = req.body;
-  if (backendTargets[name]) {
-    delete backendTargets[name];
-    res.status(200).send(`Бэкенд ${name} удален.`);
-  } else {
-    res.status(404).send(`Бэкенд ${name} не найден.`);
-  }
+    const { name } = req.body;
+    if (backendTargets[name]) {
+        delete backendTargets[name];
+        res.status(200).json({
+            message: `Backend ${name} deleted`
+        });
+    } else {
+        res.status(404).json({
+            error: `Backend ${name} not found`
+        });
+    }
 });
 
 // Маршрут для получения списка всех бэкендов
@@ -78,12 +89,16 @@ app.use('/rproxy/:backendName/:route?/*', (req, res, next) => {
     const backend = backendTargets[backendName];
     
     if (!backend) {
-        return res.status(404).send('Бэкенд не найден.');
+        return res.status(404).json({
+            error: 'Backend not found'
+        });
     }
 
     const route = backend.routes[routeName];
     if (!route) {
-        return res.status(404).send('Маршрут не найден.');
+        return res.status(404).json({
+            error: 'Route not found'
+        });
     }
 
     const proxyOptions = {
@@ -94,7 +109,8 @@ app.use('/rproxy/:backendName/:route?/*', (req, res, next) => {
             const basePath = `/rproxy/${backendName}/${routeName}`;
             return path.replace(basePath, route);
         },
-        logger: console
+        logger: console,
+        secure: false,
     };
 
     createProxyMiddleware(proxyOptions)(req, res, next);
