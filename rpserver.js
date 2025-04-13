@@ -15,10 +15,15 @@ let backendTargets = {
       posts: "/:id/posts"
     }
   },
-  render:"https://render.com/",
-  sefon: "https://sefon.pro/",  
-  portainer: "https://192.168.1.254:9443/#!/auth"
-  // Добавьте другие бэкенды по мере необходимости
+  aigrokproxy: {
+    baseUrl: "http://46.121.173.32:3000/",
+    routes: {
+        analyze: "/analyze",
+        getTest: "/api/test",
+        getTraining: "/api/training",
+        postTraining: "/api/training"
+    }
+  }
 };
 
 // Helper function to get real IP address
@@ -87,36 +92,46 @@ app.use('/rproxy/:backendName/:route?/*', (req, res, next) => {
     const backendName = req.params.backendName;
     const routeName = req.params.route || 'default';
     const backend = backendTargets[backendName];
-    
+
+    console.log(`Request param: `,req.params);
+
     if (!backend) {
         return res.status(404).json({
-            error: 'Backend not found'
+            error: 'Backend not found', backend: backendName
         });
     }
-
+    
     const route = backend.routes[routeName];
+    console.log(`Request to backend: ${backendName}, route: ${routeName}; `,route);
     if (!route) {
         return res.status(404).json({
-            error: 'Route not found'
+            error: 'Route not found', route: routeName
         });
     }
 
     const proxyOptions = {
-        target: backend.baseUrl,
+        target: backend.baseUrl.replace(/\/$/, ''), // Remove trailing slash
         changeOrigin: true,
         pathRewrite: (path) => {
-            // Удаляем префикс /rproxy/backendName/route и добавляем определенный маршрут
             const basePath = `/rproxy/${backendName}/${routeName}`;
-            return path.replace(basePath, route);
+            // Remove any extra slashes and ensure proper path formatting
+            const newPath = route.replace(/^\/+/, '');
+            return `/${newPath}`;
+        },
+        onError: (err, req, res) => {
+            console.error('Proxy Error:', err);
+            res.status(500).json({ error: 'Proxy Error', message: err.message });
         },
         logger: console,
         secure: false,
+        timeout: 5000,
+        proxyTimeout: 5000
     };
 
     createProxyMiddleware(proxyOptions)(req, res, next);
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Сервер запущен на порту ${PORT}`);
 });
