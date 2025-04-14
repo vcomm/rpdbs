@@ -1,9 +1,9 @@
 const express = require('express');
-//const request = require('request');
-const { createProxyMiddleware } = require('http-proxy-middleware');
+const proxy = require('express-http-proxy');
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Модифицированная структура backendTargets
 let backendTargets = {
@@ -93,42 +93,46 @@ app.use('/rproxy/:backendName/:route?/*', (req, res, next) => {
     const routeName = req.params.route || 'default';
     const backend = backendTargets[backendName];
 
-    console.log(`Request param: `,req.params);
-
+    console.log(`Request param:`, req.params);
+    console.log(`Request method: ${req.method}`);
+    
     if (!backend) {
         return res.status(404).json({
-            error: 'Backend not found', backend: backendName
+            error: 'Backend not found',
+            backend: backendName
         });
     }
-    
+
     const route = backend.routes[routeName];
-    console.log(`Request to backend: ${backendName}, route: ${routeName}; `,route);
     if (!route) {
         return res.status(404).json({
-            error: 'Route not found', route: routeName
+            error: 'Route not found',
+            route: routeName
         });
     }
 
-    const proxyOptions = {
-        target: backend.baseUrl.replace(/\/$/, ''), // Remove trailing slash
-        changeOrigin: true,
-        pathRewrite: (path) => {
-            const basePath = `/rproxy/${backendName}/${routeName}`;
-            // Remove any extra slashes and ensure proper path formatting
-            const newPath = route.replace(/^\/+/, '');
-            return `/${newPath}`;
+    // Create proxy middleware
+    const proxyMiddleware = proxy(backend.baseUrl, {
+        proxyReqPathResolver: function(req) {
+            return route;
         },
-        onError: (err, req, res) => {
+        proxyReqBodyDecorator: function(bodyContent, srcReq) {
+            // Ensure body is properly handled for POST/PUT
+            return new Promise(function(resolve) {
+                resolve(bodyContent);
+            });
+        },
+        proxyErrorHandler: function(err, res, next) {
             console.error('Proxy Error:', err);
-            res.status(500).json({ error: 'Proxy Error', message: err.message });
+            res.status(500).json({
+                error: 'Proxy Error',
+                message: err.message
+            });
         },
-        logger: console,
-        secure: false,
-        timeout: 5000,
-        proxyTimeout: 5000
-    };
+        timeout: 60000
+    });
 
-    createProxyMiddleware(proxyOptions)(req, res, next);
+    return proxyMiddleware(req, res, next);
 });
 
 const PORT = process.env.PORT || 5000;
